@@ -1,89 +1,37 @@
-# Kütüphaneler
-from pickletools import uint8
+import pickle
+from pydoc import locate
+from typing import List
+
+import numpy as np
+import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
-import pandas as pd
-import pickle
+
+model = pickle.load(open("xgboost_pickle.pkl", "rb"))
 
 
+def create_type_instance(type_name: str):
+    return locate(type_name).__call__()
 
+
+def get_features_dict(model):
+    feature_names = model.get_booster().feature_names
+    feature_types = list(map(create_type_instance, model.get_booster().feature_types))
+    return dict(zip(feature_names, feature_types))
+
+
+def create_input_features_class(model):
+    return type("InputFeatures", (BaseModel,), get_features_dict(model))
+
+
+InputFeatures = create_input_features_class(model)
 app = FastAPI()
 
-class ScroingItem(BaseModel):
-    gender:int
-    Partner:int
-    Dependents:int
-    tenure:float
-    PaperlessBilling:int
-    MonthlyCharges:float
-    PhoneService:str
-    TotalCharges:str
-   NEW_TotalServices
-   NEW_AVG_Charges
-   NEW_AVG_Service_Fee
-   MultipleLines_No phone service
-   MultipleLines_Yes
-   InternetService_Fiber optic
-   InternetService_No
-   OnlineSecurity_No internet service
-   OnlineSecurity_Yes
-   OnlineBackup_No internet service
-   OnlineBackup_Yes
-   DeviceProtection_No internet service
-   DeviceProtection_Yes
-   TechSupport_No internet service
-   TechSupport_Yes
-   StreamingTV_No internet service
-   StreamingTV_Yes
-   StreamingMovies_No internet service
-   StreamingMovies_Yes
-   Contract_One year
-   Contract_Two year
-   PaymentMethod_Credit card (automatic)
-   PaymentMethod_Electronic check
-   PaymentMethod_Mailed check
-   TENURE_CAT_NEW_Very_short
-   TENURE_CAT_NEW_long1
-   TENURE_CAT_NEW_long2
-   TENURE_CAT_NEW_medium1
-   TENURE_CAT_NEW_medium2
-   TENURE_CAT_NEW_medium3
-   MONTHLY_CHARGES_NEW_economy
-   MONTHLY_CHARGES_NEW_platinium
-   MONTHLY_CHARGES_NEW_premium
-   MONTHLY_CHARGES_NEW_upper_eco
-   MONTHLY_CHARGES_NEW_x_platinum
-   AgeGender_Senior_Male
-   AgeGender_Young_Female
-   AgeGender_Young_Male
-   TotalCharges_New_premium
-   Dependent_contracts_No_Two year
-   TotalCharges_New_prex2
-   TotalCharges_New_prex3
-   Dependent_contracts_No_One year
-   Dependent_contracts_Yes_Month-to-month
-   Dependent_contracts_Yes_One year
-   Dependent_contracts_Yes_Two year
-   SeniorCitizen_1
-   Contract_Extra_Services_1
-   Contract_Extra_Services_2
-   Contract_Extra_Services_3
-   Contract_Extra_Services_4
-   Contract_Extra_Services_5
-   Contract_Extra_Services_6
-   Contract_Extra_Services_7
-   NEW_Engaged_1
-   NEW_noProt_1
-   NEW_Young_Not_Engaged_1                   
-   NEW_FLAG_ANY_STREAMING_1
-   NEW_FLAG_AutoPayment_1:
-   Internet_Service_1.0:
 
-with open('xgboost_pickle.pkl','rb') as f:
-    model = pickle.load(f)
+@app.post("/predict", response_model=List)
+async def predict_post(datas: List[InputFeatures]):
+    return model.predict(np.asarray([list(data.__dict__.values()) for data in datas])).tolist()
 
-@app.post('/')
-async def scoring_endpoint(item:ScroingItem):
-    df = pd.DataFrame([item.dict().values()], columns=item.dict().keys())
-    yhat = model.predict(df)
-    return {"prediction":yhat}
+if __name__ == "__main__":
+    print(get_features_dict(model))
+    uvicorn.run(app, host="0.0.0.0", port=8080)
